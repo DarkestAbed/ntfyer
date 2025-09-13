@@ -1,7 +1,9 @@
 # main.py
 
+import click
+
 from dataclasses import dataclass
-from httpx import post
+from httpx import post, Response
 from os import environ
 from os.path import exists, join
 from pendulum import DateTime as PDateTime, now
@@ -20,10 +22,12 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from sys import exit
-from typing import Any
+from typing import Optional
 
 
 # consts
+DB_PATH: str = join(".", "ntfy", "settings.db")
+DB_URL: str = "sqlite:///ntfy/settings.db"
 # vars
 Base = declarative_base()
 
@@ -58,18 +62,22 @@ class SettingsHistory(Base):
 # # program classes
 @dataclass
 class Configurations:
-    configs: dict[str, str]
     session: Session
+    notifier_url: Optional[str] = None
 
     def __init__(self, session: Session) -> None:
+        self.session = session
+        self.notifier_url = f"{self.read_config_value(prop='URL')}/{self.read_config_value(prop='TOPIC')}"
+        return None
+    
+    def initialize_database(self) -> None:
         CONFIGS_DEFAULT: dict[str, str] = {
             "URL": "https://ntfy.sh/",
             "FMT": "md",
             "TOPIC": "test_topic",
         }
-        self.session = session
+        # print("DEBUG initializing settings database with default values")
         for key, val in CONFIGS_DEFAULT.items():
-            # print(key, val)
             self.write_config_values(prop=key, val=val)
         return None
 
@@ -109,6 +117,9 @@ class Configurations:
             print("ERROR: Unable to update settings")
             print(f"ERROR: Exception {e}")
             raise RuntimeError
+        # >> if modified url or topic, regenerate notifier_url
+        if prop == "URL" or prop == "TOPIC":
+            self.notifier_url = f"{self.read_config_value(prop='URL')}/{self.read_config_value(prop='TOPIC')}"
         return None
 
 
@@ -124,18 +135,18 @@ class Configurations:
 # methods
 def check_settings_database(path: str) -> None:
     if not exists(path=path):
-        print("Settings database not found!")
+        # print("Settings database not found!")
         raise FileNotFoundError
     else:
-        print("Settings database found! Proceeding...")
-    return None
+        return None
+        # print("Settings database found! Proceeding...")
 
 
 def create_settings_database(url: str) -> Engine:
     echo: bool = True if environ.get("ENVIRON", "dev") == "dev" else False
     engine: Engine = create_engine(url=url, echo=echo)
     Base.metadata.create_all(engine)
-    print("Settings base created! Proceeding...")
+    # print("Settings base created! Proceeding...")
     return engine
 
 
@@ -153,31 +164,82 @@ def create_db_session(engine: Engine) -> Session:
 
 # main
 def main():
-    # vars & consts
-    DB_PATH: str = join(".", "settings.db")
-    DB_URL: str = "sqlite:///settings.db"
     # # init database
     try:
         check_settings_database(path=DB_PATH)
     except FileNotFoundError:
         eng: Engine = create_settings_database(url=DB_URL)
+        session: Session = create_db_session(engine=eng)
+        configs: Configurations = Configurations(session=session)
+        configs.initialize_database()
     except Exception as e:
         print("ERROR: An unknown exception was found")
         print(f"ERROR: Exception found: {e}")
         exit(1)
-    else:
-        eng: Engine = create_db_engine(url=DB_URL)
-    # # init app
+    return None
+
+
+# groups
+@click.group("cli")
+def cli():
+    pass
+
+
+@cli.group("config")
+def configs():
+    pass
+
+
+# commands
+@configs.command(name="url")
+@click.argument("url")
+def change_notifier_url(url) -> None:
+    eng: Engine = create_db_engine(url=DB_URL)
     session: Session = create_db_session(engine=eng)
     configs: Configurations = Configurations(session=session)
-    # tests config
-    configs.write_config_values(prop="URL", val="https://ntfy.sh/test_topic")
-    print(configs.read_config_value(prop="URL"), configs.read_config_value(prop="FMT"))
+    configs.write_config_values(prop="URL", val=url)
+    print(f"The new notifier URL is {configs.notifier_url}")
+    return None
+
+
+@configs.command(name="topic")
+@click.argument("topic")
+def change_notifier_topic(topic) -> None:
+    eng: Engine = create_db_engine(url=DB_URL)
+    session: Session = create_db_session(engine=eng)
+    configs: Configurations = Configurations(session=session)
+    configs.write_config_values(prop="TOPIC", val=topic)
+    print(f"The new notifier URL is {configs.notifier_url}")
+    return None
+
+
+@configs.command(name="get")
+def get_nntfy_url() -> None:
+    eng: Engine = create_db_engine(url=DB_URL)
+    session: Session = create_db_session(engine=eng)
+    configs: Configurations = Configurations(session=session)
+    print(f"The notifier URL is {configs.notifier_url}")
+    return None
+
+
+@cli.command(name="send")
+@click.argument("text")
+def notify(text) -> None:
+    eng: Engine = create_db_engine(url=DB_URL)
+    session: Session = create_db_session(engine=eng)
+    configs: Configurations = Configurations(session=session)
+    req: Response = post(
+        url=configs.notifier_url,
+        data=text,
+    )
+    if req.status_code != 200:
+        raise RuntimeError("Error sending notification")
     return None
 
 
 # exec
 if __name__ == "__main__":
     main()
+    cli()
 else:
     pass
