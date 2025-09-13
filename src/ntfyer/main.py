@@ -4,162 +4,90 @@ import click
 
 from dataclasses import dataclass
 from httpx import post, Response
+from json import load, dump
 from os import environ
 from os.path import exists, join
-from pendulum import DateTime as PDateTime, now
-from sqlalchemy import (
-    create_engine,
-    Column,
-    DateTime,
-    Engine,
-    Integer,
-    Result,
-    select,
-    Select,
-    String,
-    update,
-    Update,
-)
-from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from sys import exit
 from typing import Optional
 
 
 # consts
-DB_PATH: str = join(".", "src", "ntfyer", "settings.db")
-DB_URL: str = "sqlite:///src/ntfyer/settings.db"
+DB_PATH: str = join(".", "src", "ntfyer", "settings.json")
 # vars
-Base = declarative_base()
-
-
-# classes
-# # database classes
-class Settings(Base):
-    __tablename__ = "settings"
-    property = Column(String, primary_key=True)
-    value = Column(String)
-
-    def __init__(self, property: str, value: str):
-        self.property = property
-        self.value = value
-        return None
-
-
-class SettingsHistory(Base):
-    __tablename__ = "settings_history"
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    property = Column(String)
-    value = Column(String)
-    updated_at = Column(DateTime)
-
-    def __init__(self, property: str, value: str, updated_at: PDateTime):
-        self.property = property
-        self.value = value
-        self.updated_at = updated_at
-        return None
+# > no vars declared
 
 
 # # program classes
 @dataclass
 class Configurations:
-    session: Session
     notifier_url: Optional[str] = None
 
-    def __init__(self, session: Session) -> None:
-        self.session = session
+    def __init__(self) -> None:
         self.notifier_url = f"{self.read_config_value(prop='URL')}/{self.read_config_value(prop='TOPIC')}"
         return None
     
     def initialize_database(self) -> None:
         CONFIGS_DEFAULT: dict[str, str] = {
-            "URL": "https://ntfy.sh/",
+            "URL": "https://ntfy.sh",
             "FMT": "md",
             "TOPIC": "test_topic",
         }
-        # print("DEBUG initializing settings database with default values")
         for key, val in CONFIGS_DEFAULT.items():
             self.write_config_values(prop=key, val=val)
         return None
+    
+    def read_config_value(self, prop: str) -> Optional[str]:
+        with open(file=DB_PATH, mode="r") as fp:
+            configs: dict[str, str] = load(fp=fp)
+        # print(f"DEBUG {configs = }")
+        prop_value: Optional[str] = configs.get(prop, None)
+        return prop_value
 
     def write_config_values(self, prop: str, val: str) -> None:
-        def update_setting() -> None:
-            query: Select = select(Settings).where(Settings.property == prop)
-            results: Result = self.session.execute(query).all()
-            if len(results) == 0:
-                # print(f"DEBUG no settings found for property '{prop}'")
-                new_setting: Settings = Settings(property=prop, value=val)
-                self.session.add(new_setting)
-            elif len(results) == 1:
-                # print(f"DEBUG property '{prop}' found with 1 value")
-                upd_setting: Update = (
-                    update(Settings)
-                    .where(Settings.property == prop)
-                    .values(value=val)
-                )
-                # print(f"{upd_setting = }")
-                self.session.execute(upd_setting)
-            else:
-                raise RuntimeError("Something is wrong in the settings database")
-            self.session.commit()
-            return None
-        
-        curr_ts: PDateTime = now(tz="America/Santiago")
-        setting_history: SettingsHistory = SettingsHistory(
-            property=prop,
-            value=val,
-            updated_at=curr_ts,
-        )
-        try:
-            update_setting()
-            self.session.add(setting_history)
-            self.session.commit()
-        except Exception as e:
-            print("ERROR: Unable to update settings")
-            print(f"ERROR: Exception {e}")
-            raise RuntimeError
+        with open(file=DB_PATH, mode="r") as fp:
+            configs: dict[str, str] = load(fp=fp)
+        configs[prop] = val
+        # print(f"DEBUG {configs = }")
+        with open(file=DB_PATH, mode="w") as fp:
+            _ = dump(obj=configs, fp=fp)
         # >> if modified url or topic, regenerate notifier_url
         if prop == "URL" or prop == "TOPIC":
             self.notifier_url = f"{self.read_config_value(prop='URL')}/{self.read_config_value(prop='TOPIC')}"
         return None
 
 
-    def read_config_value(self, prop: str) -> str:
-        query: Select = select(Settings.value).where(Settings.property == prop)
-        results: Result = self.session.execute(query).all()
-        if len(results) > 1:
-            raise RuntimeError("Illegal number of return values")
-        prop_value: str = results[0][0]
-        return prop_value
-
-
 # methods
 def check_settings_database(path: str) -> None:
     if not exists(path=path):
-        # print("Settings database not found!")
         raise FileNotFoundError
     else:
         return None
-        # print("Settings database found! Proceeding...")
 
 
-def create_settings_database(url: str) -> Engine:
-    echo: bool = True if environ.get("ENVIRON", "dev") == "dev" else False
-    engine: Engine = create_engine(url=url, echo=echo)
-    Base.metadata.create_all(engine)
-    # print("Settings base created! Proceeding...")
-    return engine
+def create_settings_database(path: str) -> None:
+    with open(file=DB_PATH, mode="w") as fp:
+        init_dict: dict[str, str] = {"TEST": "test"}
+        dump(obj=init_dict, fp=fp)
+    return None
 
 
-def create_db_engine(url: str) -> Engine:
-    echo: bool = True if environ.get("ENVIRON", "dev") == "dev" else False
-    engine: Engine = create_engine(url=url, echo=echo)
-    return engine    
+def is_first_run() -> bool:
+    RUN_FILE: str = join(".", "src", "ntfyer", ".use")
+    with open(file=RUN_FILE, mode="r") as fp:
+        data: str = fp.read()
+    if data == "0":
+        return True
+    else:
+        return False
 
 
-def create_db_session(engine: Engine) -> Session:
-    sess = sessionmaker(bind=engine)
-    session: Session = sess()
-    return session
+def first_run_setup() -> None:
+    RUN_FILE: str = join(".", "src", "ntfyer", ".use")
+    configs: Configurations = Configurations()
+    configs.initialize_database()
+    with open(file=RUN_FILE, mode="w") as fp:
+        fp.write("1")
+    return None
 
 
 # main
@@ -168,10 +96,18 @@ def main():
     try:
         check_settings_database(path=DB_PATH)
     except FileNotFoundError:
-        eng: Engine = create_settings_database(url=DB_URL)
-        session: Session = create_db_session(engine=eng)
-        configs: Configurations = Configurations(session=session)
+        create_settings_database(path=DB_PATH)
+        configs: Configurations = Configurations()
         configs.initialize_database()
+    except Exception as e:
+        print("ERROR: An unknown exception was found")
+        print(f"ERROR: Exception found: {e}")
+        exit(1)
+    try:
+        init_fg: bool = is_first_run()
+        print(f"{init_fg = }")
+        if init_fg:
+            first_run_setup()
     except Exception as e:
         print("ERROR: An unknown exception was found")
         print(f"ERROR: Exception found: {e}")
@@ -194,9 +130,7 @@ def configs():
 @configs.command(name="url")
 @click.argument("url")
 def change_notifier_url(url) -> None:
-    eng: Engine = create_db_engine(url=DB_URL)
-    session: Session = create_db_session(engine=eng)
-    configs: Configurations = Configurations(session=session)
+    configs: Configurations = Configurations()
     configs.write_config_values(prop="URL", val=url)
     print(f"The new notifier URL is {configs.notifier_url}")
     return None
@@ -205,9 +139,7 @@ def change_notifier_url(url) -> None:
 @configs.command(name="topic")
 @click.argument("topic")
 def change_notifier_topic(topic) -> None:
-    eng: Engine = create_db_engine(url=DB_URL)
-    session: Session = create_db_session(engine=eng)
-    configs: Configurations = Configurations(session=session)
+    configs: Configurations = Configurations()
     configs.write_config_values(prop="TOPIC", val=topic)
     print(f"The new notifier URL is {configs.notifier_url}")
     return None
@@ -215,19 +147,26 @@ def change_notifier_topic(topic) -> None:
 
 @configs.command(name="get")
 def get_nntfy_url() -> None:
-    eng: Engine = create_db_engine(url=DB_URL)
-    session: Session = create_db_session(engine=eng)
-    configs: Configurations = Configurations(session=session)
+    configs: Configurations = Configurations()
     print(f"The notifier URL is {configs.notifier_url}")
+    return None
+
+
+@configs.command(name="defaults")
+def set_default_configs() -> None:
+    configs: Configurations = Configurations()
+    configs.initialize_database()
+    print("Settings set to default values")
+    print(f"Current notifier URL is {configs.notifier_url}")
     return None
 
 
 @cli.command(name="send")
 @click.argument("text")
 def notify(text) -> None:
-    eng: Engine = create_db_engine(url=DB_URL)
-    session: Session = create_db_session(engine=eng)
-    configs: Configurations = Configurations(session=session)
+    configs: Configurations = Configurations()
+    if configs.notifier_url is None:
+        raise ValueError
     req: Response = post(
         url=configs.notifier_url,
         data=text,
