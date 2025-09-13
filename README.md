@@ -1,4 +1,4 @@
-![](.github/assets/logo.png)
+<img src=".github/assets/logo.png" alt="ntfyer-logo" width="100"/>
 
 # ntfyer
 
