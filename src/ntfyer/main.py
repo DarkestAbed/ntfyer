@@ -1,4 +1,4 @@
-# main.py
+# ntfyer/main.py
 
 import click
 
@@ -26,8 +26,8 @@ from typing import Optional
 
 
 # consts
-DB_PATH: str = join(".", "ntfyer", "settings.db")
-DB_URL: str = "sqlite:///ntfyer/settings.db"
+DB_PATH: str = join(".", "src", "ntfyer", "settings.db")
+DB_URL: str = "sqlite:///src/ntfyer/settings.db"
 # vars
 Base = declarative_base()
 
