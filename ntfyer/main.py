@@ -26,8 +26,8 @@ from typing import Optional
 
 
 # consts
-DB_PATH: str = join(".", "ntfy", "settings.db")
-DB_URL: str = "sqlite:///ntfy/settings.db"
+DB_PATH: str = join(".", "ntfyer", "settings.db")
+DB_URL: str = "sqlite:///ntfyer/settings.db"
 # vars
 Base = declarative_base()
 

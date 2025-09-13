@@ -1,6 +1,6 @@
 [project]
-name = "ntfy"
-version = "0.1.0"
+name = "ntfyer"
+version = "1.0.0-alpha"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -12,8 +12,8 @@ dependencies = [
 ]
 
 [project.scripts]
-ntfy = "ntfy.main:cli"
+ntfy = "ntfyer.main:cli"
 
 [build-system]
-requires = ["flit_core<4"]
-build-backend = "flit_core.buildapi"
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
