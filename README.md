@@ -1,3 +1,5 @@
+![](.github/assets/logo.png)
+
 # ntfyer
 
 ### A small and effective `ntfy.sh` wrapper utility
@@ -24,11 +26,11 @@ Installation:
 
 ### Known issues
 
-- Your `pipx` installation may fail without a clear log. If this happens, you might want to try \
+- Your `pipx` installation may fail without a clear log. If this happens, you might want to try
 ```bash
 pipx install git+https://github.com/DarkestAbed/ntfyer --python $(which python)
 ```
-- If you are not getting notifications, review the notification server and topic using \
+- If you are not getting notifications, review the notification server and topic using
 ```bash
 ntfyer config get
 ```
